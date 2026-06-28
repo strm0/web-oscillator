@@ -80,6 +80,7 @@ const controls = new Controls(state, {
   },
   setTrigSlope: (slope) => analyser.triggerSlope = slope,
   setPersistence: (v)   => crt.persistence = v,
+  setFeedback:    (v)   => crt.feedback = v,
   setGlow:        (v)   => { crt.glowIntensity = v; crt.bloomRadius = 6 + v * 4; },
   setPhosphor:    (p)   => renderer.phosphor = p,
 

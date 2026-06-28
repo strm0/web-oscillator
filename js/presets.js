@@ -13,6 +13,7 @@ const DEFAULT_STATE = {
   triggerSlope: 'rise',
   coupling: 'dc',
   persistence: 0.35,
+  feedback: 0,
   glowIntensity: 1.0,
   lineWeight: 2.0,
   crtFull: true,

@@ -20,11 +20,24 @@ export class CRTProcessor {
     this.bloomCanvas = document.createElement('canvas');
     this.bloomCtx = this.bloomCanvas.getContext('2d');
 
+    // Feedback buffers (ping-pong: output is recursively fed back into itself)
+    this.feedbackCanvas = document.createElement('canvas');
+    this.feedbackCtx = this.feedbackCanvas.getContext('2d');
+    this.feedbackTmp = document.createElement('canvas');
+    this.feedbackTmpCtx = this.feedbackTmp.getContext('2d');
+
     // Settings
     this.persistence = 0.35;
     this.glowIntensity = 1.0;
     this.bloomEnabled = true;
     this.bloomRadius = 8;
+
+    // Video feedback (0 = off; near 1 = very long tail)
+    this.feedback = 0;
+    this.fbZoom = 0.985;   // <1 = echoes recede/shrink into the distance (tunnel away)
+    this.fbRotate = 0;     // echo rotation per frame (radians)
+    this.fbOffsetX = 0;    // echo drift (px)
+    this.fbOffsetY = 0;
 
     this.W = 0;
     this.H = 0;
@@ -38,6 +51,11 @@ export class CRTProcessor {
     this.display.height = h;
     this.persistCanvas.width = w;
     this.persistCanvas.height = h;
+
+    this.feedbackCanvas.width = w;
+    this.feedbackCanvas.height = h;
+    this.feedbackTmp.width = w;
+    this.feedbackTmp.height = h;
 
     // Bloom at half res for performance
     this.bloomCanvas.width = Math.floor(w / 2);
@@ -66,12 +84,52 @@ export class CRTProcessor {
     pCtx.drawImage(signalCanvas, 0, 0, W, H);
     pCtx.globalCompositeOperation = 'source-over';
 
+    // ── 1b. Video feedback ──
+    // Recursively feed the output back into itself: the previous feedback
+    // buffer is re-drawn (scaled by the feedback gain, with a subtle echo
+    // transform) and the new signal added on top → echo/tunnel trails.
+    if (this.feedback > 0) {
+      const fCtx = this.feedbackTmpCtx;
+      fCtx.globalCompositeOperation = 'source-over';
+      fCtx.clearRect(0, 0, W, H);
+
+      // Fed-back (transformed) previous buffer, faded by the gain via alpha
+      fCtx.save();
+      fCtx.globalAlpha = this.feedback;
+      fCtx.translate(W / 2 + this.fbOffsetX, H / 2 + this.fbOffsetY);
+      fCtx.scale(this.fbZoom, this.fbZoom);
+      fCtx.rotate(this.fbRotate);
+      fCtx.translate(-W / 2, -H / 2);
+      fCtx.drawImage(this.feedbackCanvas, 0, 0);
+      fCtx.restore();
+
+      // Add the fresh signal frame
+      fCtx.globalCompositeOperation = 'lighter';
+      fCtx.drawImage(signalCanvas, 0, 0, W, H);
+      fCtx.globalCompositeOperation = 'source-over';
+
+      // Ping-pong: the temp buffer becomes the new feedback accumulation
+      let c = this.feedbackCanvas, cc = this.feedbackCtx;
+      this.feedbackCanvas = this.feedbackTmp;
+      this.feedbackCtx = this.feedbackTmpCtx;
+      this.feedbackTmp = c;
+      this.feedbackTmpCtx = cc;
+    }
+
     // ── 2. Start compositing to display ──
     dCtx.fillStyle = '#050505';
     dCtx.fillRect(0, 0, W, H);
 
     // Draw persistence buffer
     dCtx.drawImage(this.persistCanvas, 0, 0);
+
+    // Composite feedback buffer additively
+    if (this.feedback > 0) {
+      dCtx.save();
+      dCtx.globalCompositeOperation = 'lighter';
+      dCtx.drawImage(this.feedbackCanvas, 0, 0);
+      dCtx.restore();
+    }
 
     // ── 3. Bloom pass (simple CSS-filter blur approach) ──
     if (this.bloomEnabled && this.glowIntensity > 0) {

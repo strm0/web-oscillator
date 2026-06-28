@@ -67,6 +67,7 @@ export class Controls {
     this._slider('sweepSlider', 'sweepVal', v => { s.sweep = parseFloat(v); }, v => v + 'x');
     this._slider('trigSlider', 'trigVal', v => { s.triggerLevel = parseFloat(v); cb.setTrigger(parseFloat(v)); });
     this._slider('persSlider', 'persVal', v => { s.persistence = parseFloat(v); cb.setPersistence(parseFloat(v)); });
+    this._slider('fbSlider', 'fbVal', v => { s.feedback = parseFloat(v); cb.setFeedback(parseFloat(v)); });
     this._slider('glowSlider', 'glowVal', v => { s.glowIntensity = parseFloat(v); cb.setGlow(parseFloat(v)); });
     this._slider('lwSlider', 'lwVal', v => { s.lineWeight = parseFloat(v); });
 
