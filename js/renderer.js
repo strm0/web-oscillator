@@ -69,8 +69,19 @@ export class ScopeRenderer {
   }
 
   // ── WAVEFORM ──
-  drawWaveform(data, x0, y0, w, h, gain, glowIntensity, lineWeight) {
+  drawWaveform(data, x0, y0, w, h, gain, glowIntensity, lineWeight, beamIntensity = 0) {
     if (!data || data.length === 0) return;
+    if (beamIntensity > 0) {
+      const len = data.length;
+      this._ensureBeamScratch(len);
+      const bx = this._bx, by = this._by;
+      for (let i = 0; i < len; i++) {
+        bx[i] = x0 + (i / len) * w;
+        by[i] = y0 + h / 2 - data[i] * gain * (h / 2);
+      }
+      this._renderBeamTrace(len, glowIntensity, lineWeight, beamIntensity);
+      return;
+    }
     const ctx = this.ctx;
     const c = this.colors;
     const len = data.length;
@@ -205,13 +216,42 @@ export class ScopeRenderer {
   }
 
   // ── XY / LISSAJOUS ──
-  drawXY(dataL, dataR, x0, y0, w, h, gain, glowIntensity, lineWeight) {
-    if (!dataL || !dataR) return;
+  // dataX → horizontal, dataY → vertical.
+  // delay > 0 plots self-XY: Y is read `delay` samples behind X (phase-space
+  // plot of a signal against a delayed copy of itself). delay === 0 is the
+  // classic L-vs-R Lissajous and is unchanged.
+  drawXY(dataX, dataY, x0, y0, w, h, gain, glowIntensity, lineWeight, delay = 0, beamIntensity = 0) {
+    if (!dataX || !dataY) return;
     const ctx = this.ctx;
     const c = this.colors;
-    const len = Math.min(dataL.length, dataR.length);
+    const len = Math.min(dataX.length, dataY.length);
     const cx = x0 + w / 2;
     const cy = y0 + h / 2;
+    const start = delay > 0 ? delay : 0;
+    if (start >= len) return;
+
+    if (beamIntensity > 0) {
+      const n = len - start;
+      this._ensureBeamScratch(n);
+      const bx = this._bx, by = this._by;
+      for (let i = start; i < len; i++) {
+        const j = i - start;
+        bx[j] = cx + dataX[i] * gain * (w / 2);
+        by[j] = cy - dataY[i - delay] * gain * (h / 2);
+      }
+      this._renderBeamTrace(n, glowIntensity, lineWeight, beamIntensity);
+      return;
+    }
+
+    const trace = () => {
+      ctx.beginPath();
+      for (let i = start; i < len; i++) {
+        const x = cx + dataX[i] * gain * (w / 2);
+        const y = cy - dataY[i - delay] * gain * (h / 2);
+        if (i === start) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    };
 
     // Glow
     if (glowIntensity > 0) {
@@ -221,13 +261,7 @@ export class ScopeRenderer {
       ctx.globalAlpha = 0.2 * glowIntensity;
       ctx.strokeStyle = c.main;
       ctx.lineWidth = lineWeight * 3;
-      ctx.beginPath();
-      for (let i = 0; i < len; i++) {
-        const x = cx + dataL[i] * gain * (w / 2);
-        const y = cy - dataR[i] * gain * (h / 2);
-        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      }
-      ctx.stroke();
+      trace();
       ctx.restore();
     }
 
@@ -239,13 +273,7 @@ export class ScopeRenderer {
     ctx.lineWidth = lineWeight;
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
-    ctx.beginPath();
-    for (let i = 0; i < len; i++) {
-      const x = cx + dataL[i] * gain * (w / 2);
-      const y = cy - dataR[i] * gain * (h / 2);
-      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-    }
-    ctx.stroke();
+    trace();
     ctx.restore();
 
     // Core
@@ -253,37 +281,130 @@ export class ScopeRenderer {
     ctx.strokeStyle = c.core;
     ctx.lineWidth = Math.max(0.5, lineWeight * 0.3);
     ctx.lineJoin = 'round';
-    ctx.beginPath();
-    for (let i = 0; i < len; i++) {
-      const x = cx + dataL[i] * gain * (w / 2);
-      const y = cy - dataR[i] * gain * (h / 2);
-      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-    }
-    ctx.stroke();
+    trace();
     ctx.restore();
   }
 
+  // ── BEAM-INTENSITY (Z-AXIS) TRACE ──
+  // Brightness ∝ dwell time ∝ 1/(beam speed). Slow segments (sine caps,
+  // square flats) glow; fast segments (zero crossings, vertical edges) dim.
+  // Segments are bucketed by brightness so each pass is ~N strokes, not one
+  // per segment, and drawn additively ('lighter') so overlaps build up.
+  _ensureBeamScratch(n) {
+    if (!this._bx || this._bx.length < n) {
+      this._bx = new Float32Array(n);
+      this._by = new Float32Array(n);
+      this._bs = new Float32Array(n);   // per-segment speed
+    }
+    if (!this._bucketSegs) this._bucketSegs = Array.from({ length: 12 }, () => []);
+  }
+
+  // Render the point series in this._bx / this._by (n points) as a beam trace.
+  _renderBeamTrace(n, glowIntensity, lineWeight, amount) {
+    if (n < 2) return;
+    const ctx = this.ctx, c = this.colors;
+    const bx = this._bx, by = this._by, bs = this._bs, buckets = this._bucketSegs;
+    const N = buckets.length;
+
+    // refSpeed = mean segment length → effect self-scales with gain/sweep/zoom.
+    let sum = 0;
+    for (let i = 0; i < n - 1; i++) {
+      const dx = bx[i + 1] - bx[i], dy = by[i + 1] - by[i];
+      const sp = Math.sqrt(dx * dx + dy * dy);
+      bs[i] = sp;
+      sum += sp;
+    }
+    const refSpeed = Math.max(1e-3, sum / (n - 1));
+
+    // Assign each segment to a brightness bucket.
+    const FLOOR = 0.05;
+    for (let b = 0; b < N; b++) buckets[b].length = 0;
+    for (let i = 0; i < n - 1; i++) {
+      let bright = 1 / (1 + bs[i] / refSpeed);          // slow→~1, fast→→0
+      bright = (1 - amount) + amount * bright;          // blend toward uniform
+      if (bright < FLOOR) bright = FLOOR;
+      let q = Math.round(bright * (N - 1));
+      if (q < 0) q = 0; else if (q > N - 1) q = N - 1;
+      buckets[q].push(i);
+    }
+
+    // Two passes (main / bright core), same geometry, additive. No per-stroke
+    // shadowBlur here — that was the FPS killer with bucketed strokes; the CRT
+    // bloom pass already produces the phosphor glow from the persistence buffer.
+    const passes = [
+      { color: c.main, width: lineWeight,                      base: 1.0 },
+      { color: c.core, width: Math.max(0.5, lineWeight * 0.3), base: 1.0 },
+    ];
+    for (const p of passes) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = p.color;
+      ctx.lineWidth = p.width;
+      for (let b = 0; b < N; b++) {
+        const segs = buckets[b];
+        if (segs.length === 0) continue;
+        ctx.globalAlpha = p.base * (b / (N - 1));
+        if (ctx.globalAlpha <= 0) continue;
+        ctx.beginPath();
+        for (let k = 0; k < segs.length; k++) {
+          const i = segs[k];
+          ctx.moveTo(bx[i], by[i]);
+          ctx.lineTo(bx[i + 1], by[i + 1]);
+        }
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }
+
+  // Parse a '#rrggbb' phosphor colour to [r,g,b].
+  _rgb(hex) {
+    const n = parseInt(hex.slice(1), 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+
   // ── SPECTROGRAM (waterfall) ──
+  // Built as an ImageData at bins×rows and blitted once (scaled), instead of a
+  // fillRect per cell — the per-cell path cost tens of thousands of draw calls
+  // per frame on busy/high-frequency content.
   drawSpectrogram(history, x0, y0, w, h) {
     if (!history || history.length === 0) return;
-    const ctx = this.ctx;
-    const c = this.colors;
     const rows = history.length;
-    const rowH = h / rows;
+    const bins = history[0].length;
 
+    if (!this._spCanvas) {
+      this._spCanvas = document.createElement('canvas');
+      this._spCtx = this._spCanvas.getContext('2d');
+    }
+    if (this._spCanvas.width !== bins || this._spCanvas.height !== rows) {
+      this._spCanvas.width = bins;
+      this._spCanvas.height = rows;
+      this._spImg = this._spCtx.createImageData(bins, rows);
+    }
+
+    const data = this._spImg.data;
+    const [pr, pg, pb] = this._rgb(this.colors.main);
     for (let r = 0; r < rows; r++) {
-      const freqData = history[r];
-      const bins = freqData.length;
-      const colW = w / bins;
+      const row = history[r];
+      const base = r * bins * 4;
       for (let b = 0; b < bins; b++) {
-        const val = freqData[b] / 255;
-        if (val < 0.02) continue; // skip silence
-        ctx.fillStyle = c.main;
-        ctx.globalAlpha = val;
-        ctx.fillRect(x0 + b * colW, y0 + r * rowH, Math.ceil(colW), Math.ceil(rowH));
+        const val = row[b] / 255;
+        const o = base + (b << 2);
+        data[o] = pr * val;
+        data[o + 1] = pg * val;
+        data[o + 2] = pb * val;
+        data[o + 3] = 255;
       }
     }
-    ctx.globalAlpha = 1;
+    this._spCtx.putImageData(this._spImg, 0, 0);
+
+    const ctx = this.ctx;
+    const sm = ctx.imageSmoothingEnabled;
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(this._spCanvas, 0, 0, bins, rows, x0, y0, w, h);
+    ctx.imageSmoothingEnabled = sm;
   }
 
   // ── TRIGGER INDICATOR ──

@@ -38,17 +38,24 @@ export class CRTProcessor {
     this.fbRotate = 0;     // echo rotation per frame (radians)
     this.fbOffsetX = 0;    // echo drift (px)
     this.fbOffsetY = 0;
+    this.fbBlur = 0;       // softness on the feedback path (px)
 
     this.W = 0;
     this.H = 0;
   }
 
+  /**
+   * Size this processor's OFFSCREEN buffers. w/h are this pane's dimensions
+   * (full canvas in single layout, one cell in quad). The shared display
+   * canvas is sized once by the caller and must NOT be touched here — doing
+   * so would wipe every other pane's output.
+   */
   resize(w, h) {
+    w = Math.max(1, Math.floor(w));
+    h = Math.max(1, Math.floor(h));
     this.W = w;
     this.H = h;
 
-    this.display.width = w;
-    this.display.height = h;
     this.persistCanvas.width = w;
     this.persistCanvas.height = h;
 
@@ -58,20 +65,26 @@ export class CRTProcessor {
     this.feedbackTmp.height = h;
 
     // Bloom at half res for performance
-    this.bloomCanvas.width = Math.floor(w / 2);
-    this.bloomCanvas.height = Math.floor(h / 2);
+    this.bloomCanvas.width = Math.max(1, Math.floor(w / 2));
+    this.bloomCanvas.height = Math.max(1, Math.floor(h / 2));
   }
 
   /**
-   * Composite a rendered signal frame onto the display with CRT effects
+   * Composite a rendered signal frame onto the display with CRT effects.
    * @param {HTMLCanvasElement} signalCanvas - the raw signal render
+   * @param {{x:number,y:number,w:number,h:number}} [rect] - sub-region of the
+   *        signal/display canvases this pane owns. Defaults to the full buffer.
+   *        The offscreen buffers work in local (0,0)-origin coords; only the
+   *        reads from signalCanvas and writes to the display are offset by rect.
    */
-  process(signalCanvas) {
+  process(signalCanvas, rect) {
     const dCtx = this.displayCtx;
     const pCtx = this.persistCtx;
     const bCtx = this.bloomCtx;
     const W = this.W;
     const H = this.H;
+    const rx = rect ? rect.x : 0;
+    const ry = rect ? rect.y : 0;
 
     // ── 1. Phosphor persistence ──
     // Fade the persistence buffer toward black
@@ -79,9 +92,10 @@ export class CRTProcessor {
     pCtx.fillStyle = `rgba(0, 0, 0, ${1 - this.persistence})`;
     pCtx.fillRect(0, 0, W, H);
 
-    // Draw new signal frame on top (additive-like via lighter)
+    // Draw new signal frame on top (additive-like via lighter).
+    // Read only this pane's sub-rect of the signal canvas into the local buffer.
     pCtx.globalCompositeOperation = 'lighter';
-    pCtx.drawImage(signalCanvas, 0, 0, W, H);
+    pCtx.drawImage(signalCanvas, rx, ry, W, H, 0, 0, W, H);
     pCtx.globalCompositeOperation = 'source-over';
 
     // ── 1b. Video feedback ──
@@ -93,9 +107,11 @@ export class CRTProcessor {
       fCtx.globalCompositeOperation = 'source-over';
       fCtx.clearRect(0, 0, W, H);
 
-      // Fed-back (transformed) previous buffer, faded by the gain via alpha
+      // Fed-back (transformed) previous buffer, faded by the gain via alpha,
+      // optionally softened by a blur on the feedback path.
       fCtx.save();
       fCtx.globalAlpha = this.feedback;
+      if (this.fbBlur > 0) fCtx.filter = `blur(${this.fbBlur}px)`;
       fCtx.translate(W / 2 + this.fbOffsetX, H / 2 + this.fbOffsetY);
       fCtx.scale(this.fbZoom, this.fbZoom);
       fCtx.rotate(this.fbRotate);
@@ -103,9 +119,9 @@ export class CRTProcessor {
       fCtx.drawImage(this.feedbackCanvas, 0, 0);
       fCtx.restore();
 
-      // Add the fresh signal frame
+      // Add the fresh signal frame (this pane's sub-rect only)
       fCtx.globalCompositeOperation = 'lighter';
-      fCtx.drawImage(signalCanvas, 0, 0, W, H);
+      fCtx.drawImage(signalCanvas, rx, ry, W, H, 0, 0, W, H);
       fCtx.globalCompositeOperation = 'source-over';
 
       // Ping-pong: the temp buffer becomes the new feedback accumulation
@@ -114,20 +130,24 @@ export class CRTProcessor {
       this.feedbackCtx = this.feedbackTmpCtx;
       this.feedbackTmp = c;
       this.feedbackTmpCtx = cc;
+    } else {
+      // Feedback off — keep the buffer clean so re-enabling starts fresh
+      // (no stale frame flashes back in).
+      this.feedbackCtx.clearRect(0, 0, W, H);
     }
 
-    // ── 2. Start compositing to display ──
+    // ── 2. Start compositing to display (offset into this pane's rect) ──
     dCtx.fillStyle = '#050505';
-    dCtx.fillRect(0, 0, W, H);
+    dCtx.fillRect(rx, ry, W, H);
 
     // Draw persistence buffer
-    dCtx.drawImage(this.persistCanvas, 0, 0);
+    dCtx.drawImage(this.persistCanvas, rx, ry);
 
     // Composite feedback buffer additively
     if (this.feedback > 0) {
       dCtx.save();
       dCtx.globalCompositeOperation = 'lighter';
-      dCtx.drawImage(this.feedbackCanvas, 0, 0);
+      dCtx.drawImage(this.feedbackCanvas, rx, ry);
       dCtx.restore();
     }
 
@@ -146,7 +166,7 @@ export class CRTProcessor {
       dCtx.save();
       dCtx.globalCompositeOperation = 'lighter';
       dCtx.globalAlpha = 0.3 * this.glowIntensity;
-      dCtx.drawImage(this.bloomCanvas, 0, 0, W, H);
+      dCtx.drawImage(this.bloomCanvas, rx, ry, W, H);
       dCtx.restore();
     }
   }

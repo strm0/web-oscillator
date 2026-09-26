@@ -56,9 +56,29 @@
       </div>
     </div>
 
+    <!-- Layout -->
+    <div>
+      <h3>Layout <span class="shortcut">6</span></h3>
+      <div class="btn-row">
+        <button class="btn active" id="btnLayoutSingle">SINGLE</button>
+        <button class="btn" id="btnLayoutQuad">QUAD 2×2</button>
+      </div>
+    </div>
+
+    <!-- Pane focus (quad only) -->
+    <div>
+      <h3>Editing pane <span class="val" id="focusLabel">TL</span> <span class="shortcut">[ ]</span></h3>
+      <div class="btn-row" id="focusRow">
+        <button class="btn active" id="focus-0" disabled>TL</button>
+        <button class="btn" id="focus-1" disabled>TR</button>
+        <button class="btn" id="focus-2" disabled>BL</button>
+        <button class="btn" id="focus-3" disabled>BR</button>
+      </div>
+    </div>
+
     <!-- Display mode -->
     <div>
-      <h3>Display</h3>
+      <h3>Display <span class="val">focused pane</span></h3>
       <div class="btn-row">
         <button class="btn active" id="btn-wave">WAVE <span class="shortcut">1</span></button>
         <button class="btn" id="btn-fft">FFT <span class="shortcut">2</span></button>
@@ -68,6 +88,12 @@
         <button class="btn" id="btn-both">W+F <span class="shortcut">4</span></button>
         <button class="btn" id="btn-spectrogram">SPECTRO <span class="shortcut">5</span></button>
         <button class="btn" id="btnLogScale">LOG</button>
+      </div>
+      <label style="margin-top:6px">XY source</label>
+      <div class="btn-row">
+        <button class="btn active" id="btnXyAuto">AUTO</button>
+        <button class="btn" id="btnXyStereo">STEREO</button>
+        <button class="btn" id="btnXySelf">SELF</button>
       </div>
     </div>
 
@@ -166,14 +192,43 @@
         <label style="margin-top:6px">Persistence <span class="val" id="persVal">0.35</span></label>
         <input type="range" id="persSlider" min="0" max="0.85" step="0.01" value="0.35">
 
-        <label style="margin-top:6px">Feedback <span class="val" id="fbVal">0.0</span></label>
-        <input type="range" id="fbSlider" min="0" max="0.98" step="0.01" value="0">
-
         <label>Glow intensity <span class="val" id="glowVal">1.0</span></label>
         <input type="range" id="glowSlider" min="0" max="2" step="0.05" value="1">
 
         <label>Line weight <span class="val" id="lwVal">2.0</span></label>
         <input type="range" id="lwSlider" min="0.5" max="5" step="0.25" value="2">
+
+        <label>Beam <span class="val" id="beamVal">0.6</span></label>
+        <input type="range" id="beamSlider" min="0" max="1" step="0.05" value="0.6">
+      </div>
+    </div>
+
+    <!-- Video feedback (per focused pane) -->
+    <div>
+      <h3>Feedback <span class="val">focused pane</span></h3>
+      <div class="ctrl-group">
+        <div class="btn-row">
+          <button class="btn" id="btnFbOn">ON</button>
+          <button class="btn active" id="btnFbOff">OFF</button>
+        </div>
+
+        <label style="margin-top:6px">Amount <span class="val" id="fbVal">0.85</span></label>
+        <input type="range" id="fbSlider" min="0" max="0.98" step="0.01" value="0.85" disabled>
+
+        <label>Zoom <span class="val" id="fbZoomVal">0.99</span></label>
+        <input type="range" id="fbZoomSlider" min="0.9" max="1.1" step="0.005" value="0.99" disabled>
+
+        <label>Rotation° <span class="val" id="fbRotateVal">0.0</span></label>
+        <input type="range" id="fbRotateSlider" min="-5" max="5" step="0.1" value="0" disabled>
+
+        <label>Offset X <span class="val" id="fbOffXVal">0</span></label>
+        <input type="range" id="fbOffXSlider" min="-20" max="20" step="1" value="0" disabled>
+
+        <label>Offset Y <span class="val" id="fbOffYVal">0</span></label>
+        <input type="range" id="fbOffYSlider" min="-20" max="20" step="1" value="0" disabled>
+
+        <label>Blur <span class="val" id="fbBlurVal">0</span></label>
+        <input type="range" id="fbBlurSlider" min="0" max="8" step="0.5" value="0" disabled>
       </div>
     </div>
 
@@ -182,6 +237,8 @@
       <h3>Shortcuts</h3>
       <div style="font-size:11px; color:#555; line-height:1.6; font-family:'Share Tech Mono',monospace;">
         1-5 Display modes<br>
+        6 &nbsp; Single/Quad<br>
+        [ ] Focus pane (quad)<br>
         A &nbsp; Toggle AC/DC<br>
         T &nbsp; Cycle trigger<br>
         R &nbsp; Rearm single<br>

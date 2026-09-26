@@ -23,15 +23,21 @@ export class AudioEngine {
     this.smoothing = 0.65;
     this.inputChannels = 1;
 
-    // Buffers
-    this.timeBufL = null;
-    this.timeBufR = null;
+    // Frequency-domain buffers (time-domain now comes from the ring buffer)
     this.freqBufL = null;
     this.freqBufR = null;
 
     // AC/DC coupling
     this.coupling = 'dc'; // 'ac' | 'dc'
     this.dcBlocker = null;
+
+    // Continuous capture → ring buffer (time-domain source for triggers).
+    // Frequency-domain still comes from the AnalyserNodes above.
+    this.RING = 32768;          // power of two; ≈0.68s @48k
+    this.ringL = null;
+    this.ringR = null;
+    this.ringW = 0;
+    this.capture = null;
   }
 
   async enumerateDevices() {
@@ -101,12 +107,27 @@ export class AudioEngine {
     this.analyserR.fftSize = this.fftSize;
     this.analyserR.smoothingTimeConstant = this.smoothing;
 
-    // Wire up the graph
+    // Continuous capture worklet → ring buffer (time-domain source for triggers).
+    await this.ctx.audioWorklet.addModule('js/capture-processor.js');
+    this.capture = new AudioWorkletNode(this.ctx, 'capture-processor', {
+      numberOfInputs: 1, numberOfOutputs: 0, channelCount: 2,
+    });
+    this.ringL = new Float32Array(this.RING);
+    this.ringR = new Float32Array(this.RING);
+    this.ringW = 0;
+    this.capture.port.onmessage = (e) => {
+      const { l, r } = e.data;
+      for (let i = 0; i < l.length; i++) {
+        this.ringL[this.ringW] = l[i];
+        this.ringR[this.ringW] = r[i];
+        this.ringW = (this.ringW + 1) & (this.RING - 1);
+      }
+    };
+
+    // Wire up the graph (also connects the post-coupling node → capture)
     this._connectGraph();
 
-    // Allocate buffers
-    this.timeBufL = new Float32Array(this.analyserL.fftSize);
-    this.timeBufR = new Float32Array(this.analyserR.fftSize);
+    // Frequency-domain buffers (FFT / spectrogram still use the analysers)
     this.freqBufL = new Uint8Array(this.analyserL.frequencyBinCount);
     this.freqBufR = new Uint8Array(this.analyserR.frequencyBinCount);
 
@@ -152,6 +173,11 @@ export class AudioEngine {
       outputNode.connect(this.analyserL);
       outputNode.connect(this.analyserR);
     }
+
+    // Capture taps the SAME post-coupling node the analysers see, so the
+    // time-domain trace stays consistent with AC/DC coupling (a mono source
+    // is upmixed to 2ch / handled as duplicate-R inside the worklet).
+    if (this.capture) outputNode.connect(this.capture);
   }
 
   setCoupling(mode) {
@@ -167,25 +193,38 @@ export class AudioEngine {
     this.running = false;
     try { this.sourceNode.disconnect(); } catch (e) {}
     try { this.gainNode.disconnect(); } catch (e) {}
+    try { this.capture.disconnect(); } catch (e) {}
+    if (this.capture) this.capture.port.onmessage = null;
     if (this.stream) this.stream.getTracks().forEach(t => t.stop());
     if (this.ctx) this.ctx.close();
     this.ctx = null;
+    this.capture = null;
+    this.ringL = null;
+    this.ringR = null;
     this.inputChannels = 1;
   }
 
-  // Pull latest data
+  // Pull latest frequency-domain data (time-domain comes from the ring via
+  // getTimeSnapshot). Called once per frame regardless of pane count.
   getSamples() {
     if (!this.running) return null;
-    this.analyserL.getFloatTimeDomainData(this.timeBufL);
-    this.analyserR.getFloatTimeDomainData(this.timeBufR);
     this.analyserL.getByteFrequencyData(this.freqBufL);
     this.analyserR.getByteFrequencyData(this.freqBufR);
     return {
-      timeL: this.timeBufL,
-      timeR: this.timeBufR,
       freqL: this.freqBufL,
       freqR: this.freqBufR,
     };
+  }
+
+  // Copy the most recent `len` samples out of a ring into `out` (a reusable
+  // linear scratch buffer), handling wraparound. `out.length` should equal len.
+  getTimeSnapshot(out, channel, len) {
+    const ring = channel === 'r' ? this.ringR : this.ringL;
+    if (!ring) { out.fill(0); return out; }
+    const mask = this.RING - 1;
+    const start = (this.ringW - len) & mask;
+    for (let i = 0; i < len; i++) out[i] = ring[(start + i) & mask];
+    return out;
   }
 
   get sampleRate() {

@@ -1,6 +1,15 @@
 /* ═══════════════════════════════════════════════════════════
    controls.js — UI bindings, keyboard shortcuts, panel logic
+   ═══════════════════════════════════════════════════════════
+
+   Controls edit the FOCUSED pane's config (state.panes[focusedIdx]).
+   In single layout the focused pane is always pane 0, so behaviour is
+   identical to the single-scope build. The per-frame sync in main.js pushes
+   config → that pane's CRTProcessor / ScopeAnalyser, so most controls only
+   need to mutate config here.
    ═══════════════════════════════════════════════════════════ */
+
+const MODES = ['wave', 'fft', 'xy', 'both', 'spectrogram'];
 
 export class Controls {
   constructor(state, callbacks) {
@@ -9,6 +18,16 @@ export class Controls {
     this._bindUI();
     this._bindKeyboard();
     this._populateDevices();
+    this._refreshFocusUI();
+    this.refreshControls();
+  }
+
+  // Focused pane index + its config (the editing target)
+  _focusedIdx() {
+    return this.state.layout === 'single' ? 0 : this.state.focusedPane;
+  }
+  _cfg() {
+    return this.state.panes[this._focusedIdx()];
   }
 
   // ── Device dropdown ──
@@ -22,23 +41,36 @@ export class Controls {
       opt.textContent = d.label || ('Input ' + d.deviceId.slice(0, 8));
       sel.appendChild(opt);
     });
-    // Re-enumerate on device change
     navigator.mediaDevices.addEventListener('devicechange', () => this._populateDevices());
   }
 
   // ── UI bindings ──
   _bindUI() {
-    const s = this.state;
     const cb = this.cb;
 
     // Start / Stop
     document.getElementById('btnStart').addEventListener('click', () => cb.start());
     document.getElementById('btnStop').addEventListener('click', () => cb.stop());
 
+    // Layout
+    document.getElementById('btnLayoutSingle')?.addEventListener('click', () => this._setLayout('single'));
+    document.getElementById('btnLayoutQuad')?.addEventListener('click', () => this._setLayout('quad'));
+
+    // Pane focus selector (quad only)
+    for (let i = 0; i < 4; i++) {
+      document.getElementById('focus-' + i)?.addEventListener('click', () => this.setFocus(i));
+    }
+
     // Display mode
-    ['wave', 'fft', 'xy', 'both', 'spectrogram'].forEach(mode => {
+    MODES.forEach(mode => {
       const btn = document.getElementById('btn-' + mode);
       if (btn) btn.addEventListener('click', () => this._setMode(mode));
+    });
+
+    // XY source
+    [['Auto', 'auto'], ['Stereo', 'stereo'], ['Self', 'self']].forEach(([label, val]) => {
+      const btn = document.getElementById('btnXy' + label);
+      if (btn) btn.addEventListener('click', () => this._setXYSource(val));
     });
 
     // Channel select
@@ -47,7 +79,7 @@ export class Controls {
       if (btn) btn.addEventListener('click', () => this._setChannel(ch.toLowerCase()));
     });
 
-    // Coupling
+    // Coupling (global)
     document.getElementById('btnAC').addEventListener('click', () => this._setCoupling('ac'));
     document.getElementById('btnDC').addEventListener('click', () => this._setCoupling('dc'));
 
@@ -61,15 +93,29 @@ export class Controls {
     document.getElementById('trigRise').addEventListener('click', () => this._setTrigSlope('rise'));
     document.getElementById('trigFall').addEventListener('click', () => this._setTrigSlope('fall'));
 
-    // Sliders
-    this._slider('inputGainSlider', 'inputGainVal', v => { cb.setInputGain(parseFloat(v)); }, v => v + 'x');
-    this._slider('gainSlider', 'gainVal', v => { s.gain = parseFloat(v); }, v => v + 'x');
-    this._slider('sweepSlider', 'sweepVal', v => { s.sweep = parseFloat(v); }, v => v + 'x');
-    this._slider('trigSlider', 'trigVal', v => { s.triggerLevel = parseFloat(v); cb.setTrigger(parseFloat(v)); });
-    this._slider('persSlider', 'persVal', v => { s.persistence = parseFloat(v); cb.setPersistence(parseFloat(v)); });
-    this._slider('fbSlider', 'fbVal', v => { s.feedback = parseFloat(v); cb.setFeedback(parseFloat(v)); });
-    this._slider('glowSlider', 'glowVal', v => { s.glowIntensity = parseFloat(v); cb.setGlow(parseFloat(v)); });
-    this._slider('lwSlider', 'lwVal', v => { s.lineWeight = parseFloat(v); });
+    // Sliders — global
+    this._slider('inputGainSlider', 'inputGainVal', v => {
+      this.state.inputGain = parseFloat(v); cb.setInputGain(parseFloat(v));
+    }, v => v + 'x');
+
+    // Sliders — per focused pane
+    this._slider('gainSlider', 'gainVal', v => { this._cfg().gain = parseFloat(v); }, v => v + 'x');
+    this._slider('sweepSlider', 'sweepVal', v => { this._cfg().sweep = parseFloat(v); }, v => v + 'x');
+    this._slider('trigSlider', 'trigVal', v => { this._cfg().trigLevel = parseFloat(v); });
+    this._slider('persSlider', 'persVal', v => { this._cfg().persistence = parseFloat(v); });
+    this._slider('glowSlider', 'glowVal', v => { this._cfg().glow = parseFloat(v); });
+    this._slider('lwSlider', 'lwVal', v => { this._cfg().lineWeight = parseFloat(v); });
+    this._slider('beamSlider', 'beamVal', v => { this._cfg().beamIntensity = parseFloat(v); });
+
+    // Feedback (per focused pane)
+    document.getElementById('btnFbOn')?.addEventListener('click', () => this._setFeedbackEnabled(true));
+    document.getElementById('btnFbOff')?.addEventListener('click', () => this._setFeedbackEnabled(false));
+    this._slider('fbSlider', 'fbVal', v => { this._cfg().feedback = parseFloat(v); });
+    this._slider('fbZoomSlider', 'fbZoomVal', v => { this._cfg().fbZoom = parseFloat(v); });
+    this._slider('fbRotateSlider', 'fbRotateVal', v => { this._cfg().fbRotate = parseFloat(v) * Math.PI / 180; });
+    this._slider('fbOffXSlider', 'fbOffXVal', v => { this._cfg().fbOffsetX = parseFloat(v); });
+    this._slider('fbOffYSlider', 'fbOffYVal', v => { this._cfg().fbOffsetY = parseFloat(v); });
+    this._slider('fbBlurSlider', 'fbBlurVal', v => { this._cfg().fbBlur = parseFloat(v); });
 
     // CRT mode
     document.getElementById('btnCrtOn').addEventListener('click', () => cb.setCrt(true));
@@ -77,30 +123,26 @@ export class Controls {
 
     // Phosphor type
     document.getElementById('phosphorSelect').addEventListener('change', (e) => {
-      s.phosphor = e.target.value;
-      cb.setPhosphor(e.target.value);
+      this._cfg().phosphor = e.target.value;
     });
 
-    // Freeze
+    // Freeze / cursors
     document.getElementById('btnFreeze').addEventListener('click', () => cb.toggleFreeze());
-
-    // Cursors
     document.getElementById('btnCursors').addEventListener('click', () => cb.toggleCursors());
 
     // FFT log scale
     const logBtn = document.getElementById('btnLogScale');
     if (logBtn) logBtn.addEventListener('click', () => {
-      s.logScale = !s.logScale;
-      logBtn.classList.toggle('active', s.logScale);
+      const v = !this._cfg().logScale;
+      this._cfg().logScale = v;
+      logBtn.classList.toggle('active', v);
     });
 
     // Rearm single trigger
     document.getElementById('btnRearm')?.addEventListener('click', () => cb.rearm());
 
-    // Panel toggle
+    // Panel / fullscreen
     document.getElementById('btnTogglePanel').addEventListener('click', () => this._togglePanel());
-
-    // Fullscreen
     document.getElementById('btnFullscreen').addEventListener('click', () => this._toggleFullscreen());
   }
 
@@ -115,9 +157,123 @@ export class Controls {
     });
   }
 
+  // ── Layout ──
+  _setLayout(layout) {
+    this.cb.setLayout(layout);   // main.js updates state + calls updateLayout back
+  }
+
+  updateLayout(layout) {
+    document.getElementById('btnLayoutSingle')?.classList.toggle('active', layout === 'single');
+    document.getElementById('btnLayoutQuad')?.classList.toggle('active', layout === 'quad');
+    document.getElementById('scopeContainer')?.classList.toggle('quad', layout === 'quad');
+    // Focus selector is only meaningful in quad.
+    const single = layout === 'single';
+    for (let i = 0; i < 4; i++) {
+      const b = document.getElementById('focus-' + i);
+      if (b) b.disabled = single;
+    }
+    this._refreshFocusUI();
+    this.refreshControls();   // reflect focused pane (pane 0 in single)
+  }
+
+  // ── Pane focus ──
+  setFocus(idx) {
+    if (this.state.layout !== 'quad') return;   // focus only applies in quad
+    this.state.focusedPane = idx;               // render reads this for the highlight
+    this._refreshFocusUI();
+    this.refreshControls();
+    this.cb.onFocusChange?.();                  // (re)show the focus border briefly
+  }
+
+  _cycleFocus(dir) {
+    if (this.state.layout !== 'quad') return;
+    this.setFocus((this.state.focusedPane + dir + 4) % 4);
+  }
+
+  _refreshFocusUI() {
+    const idx = this._focusedIdx();
+    const names = ['TL', 'TR', 'BL', 'BR'];
+    for (let i = 0; i < 4; i++) {
+      document.getElementById('focus-' + i)?.classList.toggle('active', i === idx);
+    }
+    const lbl = document.getElementById('focusLabel');
+    if (lbl) lbl.textContent = names[idx] + (this.state.layout === 'single' ? ' · single' : '');
+  }
+
+  // ── Two-way binding: write a slider's value + label from config ──
+  _setSlider(sliderId, valId, value, formatter) {
+    const el = document.getElementById(sliderId);
+    if (el) el.value = value;
+    const valEl = document.getElementById(valId);
+    if (valEl) valEl.textContent = formatter ? formatter(el ? el.value : value) : (el ? el.value : value);
+  }
+
+  // Read the focused pane's config into every per-pane control.
+  refreshControls() {
+    const c = this._cfg();
+
+    // Display mode
+    MODES.forEach(m => document.getElementById('btn-' + m)?.classList.toggle('active', m === c.mode));
+    const labels = { wave: 'WAVEFORM', fft: 'SPECTRUM', xy: 'XY MODE', both: 'WAVE+FFT', spectrogram: 'SPECTRO' };
+    document.getElementById('rdMode').textContent = labels[c.mode] || c.mode.toUpperCase();
+
+    // XY source
+    [['Auto', 'auto'], ['Stereo', 'stereo'], ['Self', 'self']].forEach(([l, v]) =>
+      document.getElementById('btnXy' + l)?.classList.toggle('active', v === c.xySource));
+
+    // Channel
+    document.getElementById('btnChL').classList.toggle('active', c.channel === 'l');
+    document.getElementById('btnChR').classList.toggle('active', c.channel === 'r');
+    document.getElementById('btnChMix').classList.toggle('active', c.channel === 'mix');
+
+    // Trigger
+    ['auto', 'normal', 'single'].forEach(m =>
+      document.getElementById('trig-' + m)?.classList.toggle('active', m === c.trigMode));
+    document.getElementById('trigRise').classList.toggle('active', c.trigSlope === 'rise');
+    document.getElementById('trigFall').classList.toggle('active', c.trigSlope === 'fall');
+
+    // Sliders
+    this._setSlider('trigSlider', 'trigVal', c.trigLevel);
+    this._setSlider('gainSlider', 'gainVal', c.gain, v => v + 'x');
+    this._setSlider('sweepSlider', 'sweepVal', c.sweep, v => v + 'x');
+    this._setSlider('persSlider', 'persVal', c.persistence);
+    this._setSlider('glowSlider', 'glowVal', c.glow);
+    this._setSlider('lwSlider', 'lwVal', c.lineWeight);
+    this._setSlider('beamSlider', 'beamVal', c.beamIntensity);
+
+    // Feedback section
+    this._refreshFeedbackUI(c.feedbackEnabled);
+    this._setSlider('fbSlider', 'fbVal', c.feedback);
+    this._setSlider('fbZoomSlider', 'fbZoomVal', c.fbZoom);
+    this._setSlider('fbRotateSlider', 'fbRotateVal', (c.fbRotate * 180 / Math.PI).toFixed(1));
+    this._setSlider('fbOffXSlider', 'fbOffXVal', c.fbOffsetX);
+    this._setSlider('fbOffYSlider', 'fbOffYVal', c.fbOffsetY);
+    this._setSlider('fbBlurSlider', 'fbBlurVal', c.fbBlur);
+
+    // Phosphor + log
+    document.getElementById('phosphorSelect').value = c.phosphor;
+    document.getElementById('btnLogScale')?.classList.toggle('active', c.logScale);
+
+    // CRT on/off + overlay (follows focused pane)
+    const on = c.crtEnabled;
+    document.getElementById('btnCrtOn').classList.toggle('active', on);
+    document.getElementById('btnCrtOff').classList.toggle('active', !on);
+    document.getElementById('crtOverlay').classList.toggle('off', !on);
+    document.getElementById('scanlines').classList.toggle('off', !on);
+    document.getElementById('scopeContainer').classList.toggle('crt-on', on);
+
+    // Freeze state lives on the pane's analyser, not config
+    this.updateFreeze(this.cb.getPaneFrozen(this._focusedIdx()));
+  }
+
   _setMode(mode) {
-    this.state.mode = mode;
-    ['wave', 'fft', 'xy', 'both', 'spectrogram'].forEach(m => {
+    const cfg = this._cfg();
+    const prev = cfg.mode;
+    cfg.mode = mode;
+    if (prev === 'spectrogram' && mode !== 'spectrogram') {
+      this.cb.resetPaneHistory(this._focusedIdx());
+    }
+    MODES.forEach(m => {
       const btn = document.getElementById('btn-' + m);
       if (btn) btn.classList.toggle('active', m === mode);
     });
@@ -125,8 +281,29 @@ export class Controls {
     document.getElementById('rdMode').textContent = labels[mode] || mode.toUpperCase();
   }
 
+  _setXYSource(src) {
+    this._cfg().xySource = src;
+    [['Auto', 'auto'], ['Stereo', 'stereo'], ['Self', 'self']].forEach(([label, val]) => {
+      document.getElementById('btnXy' + label)?.classList.toggle('active', val === src);
+    });
+  }
+
+  // ── Feedback ──
+  _setFeedbackEnabled(on) {
+    this._cfg().feedbackEnabled = on;
+    this._refreshFeedbackUI(on);
+  }
+
+  // Toggle buttons + enable/disable the param sliders (only meaningful when on).
+  _refreshFeedbackUI(on) {
+    document.getElementById('btnFbOn')?.classList.toggle('active', on);
+    document.getElementById('btnFbOff')?.classList.toggle('active', !on);
+    ['fbSlider', 'fbZoomSlider', 'fbRotateSlider', 'fbOffXSlider', 'fbOffYSlider', 'fbBlurSlider']
+      .forEach(id => { const el = document.getElementById(id); if (el) el.disabled = !on; });
+  }
+
   _setChannel(ch) {
-    this.state.channel = ch;
+    this._cfg().channel = ch;
     document.getElementById('btnChL').classList.toggle('active', ch === 'l');
     document.getElementById('btnChR').classList.toggle('active', ch === 'r');
     document.getElementById('btnChMix').classList.toggle('active', ch === 'mix');
@@ -140,7 +317,7 @@ export class Controls {
   }
 
   _setTrigMode(mode) {
-    this.state.triggerMode = mode;
+    this._cfg().trigMode = mode;
     ['auto', 'normal', 'single'].forEach(m => {
       document.getElementById('trig-' + m)?.classList.toggle('active', m === mode);
     });
@@ -148,17 +325,15 @@ export class Controls {
   }
 
   _setTrigSlope(slope) {
-    this.state.triggerSlope = slope;
+    this._cfg().trigSlope = slope;
     document.getElementById('trigRise').classList.toggle('active', slope === 'rise');
     document.getElementById('trigFall').classList.toggle('active', slope === 'fall');
-    this.cb.setTrigSlope(slope);
   }
 
   // ── PANEL TOGGLE ──
   _togglePanel() {
     const panel = document.getElementById('sidePanel');
     panel.classList.toggle('collapsed');
-    // Trigger resize so scope fills the space
     setTimeout(() => window.dispatchEvent(new Event('resize')), 260);
   }
 
@@ -167,7 +342,6 @@ export class Controls {
     if (!document.fullscreenElement) {
       document.documentElement.requestFullscreen().then(() => {
         document.body.classList.add('fullscreen');
-        // Briefly show top bar so user knows how to exit
         document.getElementById('topBar').classList.add('visible');
         setTimeout(() => document.getElementById('topBar').classList.remove('visible'), 1500);
         setTimeout(() => window.dispatchEvent(new Event('resize')), 100);
@@ -195,42 +369,29 @@ export class Controls {
         case '3': this._setMode('xy'); break;
         case '4': this._setMode('both'); break;
         case '5': this._setMode('spectrogram'); break;
+        case '6': this._setLayout(this.state.layout === 'quad' ? 'single' : 'quad'); break;
+        case '[': this._cycleFocus(-1); break;
+        case ']': this._cycleFocus(1); break;
         case 'c': this.cb.toggleCursors(); break;
         case 'a': this._setCoupling(this.state.coupling === 'ac' ? 'dc' : 'ac'); break;
         case 'f': this._toggleFullscreen(); break;
         case 'p': this._togglePanel(); break;
-        case 't':
-          if (this.state.triggerMode === 'auto') this._setTrigMode('normal');
-          else if (this.state.triggerMode === 'normal') this._setTrigMode('single');
-          else this._setTrigMode('auto');
+        case 't': {
+          const m = this._cfg().trigMode;
+          this._setTrigMode(m === 'auto' ? 'normal' : m === 'normal' ? 'single' : 'auto');
           break;
+        }
         case 'r': this.cb.rearm(); break;
         case 's':
-          if (e.ctrlKey || e.metaKey) {
-            e.preventDefault();
-            this.cb.screenshot();
-          }
+          if (e.ctrlKey || e.metaKey) { e.preventDefault(); this.cb.screenshot(); }
           break;
-        case 'arrowup':
-          e.preventDefault();
-          this._adjustSlider('gainSlider', 0.1);
-          break;
-        case 'arrowdown':
-          e.preventDefault();
-          this._adjustSlider('gainSlider', -0.1);
-          break;
-        case 'arrowleft':
-          e.preventDefault();
-          this._adjustSlider('sweepSlider', -0.25);
-          break;
-        case 'arrowright':
-          e.preventDefault();
-          this._adjustSlider('sweepSlider', 0.25);
-          break;
+        case 'arrowup':   e.preventDefault(); this._adjustSlider('gainSlider', 0.1); break;
+        case 'arrowdown': e.preventDefault(); this._adjustSlider('gainSlider', -0.1); break;
+        case 'arrowleft': e.preventDefault(); this._adjustSlider('sweepSlider', -0.25); break;
+        case 'arrowright':e.preventDefault(); this._adjustSlider('sweepSlider', 0.25); break;
       }
     });
 
-    // Listen for fullscreen exit via Escape
     document.addEventListener('fullscreenchange', () => {
       if (!document.fullscreenElement) {
         document.body.classList.remove('fullscreen');
