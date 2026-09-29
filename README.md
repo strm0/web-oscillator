@@ -2,7 +2,8 @@
 
 A browser-based audio oscilloscope with CRT-style rendering. Connects to any audio input (microphone, audio interface, synth) via the Web Audio API and displays real-time waveforms, frequency spectra, Lissajous patterns, and spectrograms.
 
-Built for use with hardware synths and audio interfaces like the Scarlett 2i2.
+Built for use with hardware synths and audio interfaces like the Scarlett 2i2, and can also show audio
+playing on the computer itself.
 
 ## Features
 
@@ -28,6 +29,24 @@ python3 -m http.server 8000
 ```
 
 Open `http://localhost:8000` in Chrome. Select your audio input from the dropdown and press Start.
+
+After editing the JS, hard reload with Cmd+Shift+R. The simple server sends no cache headers, so a
+normal reload can mix old cached modules with the new HTML and break the page.
+
+## Visualising audio playing on the computer (macOS)
+
+The scope can show anything playing on the Mac (music, YouTube, etc.) through the free
+[BlackHole](https://github.com/ExistentialAudio/BlackHole) virtual audio driver. No code changes are
+needed, because the scope captures any audio input.
+
+1. `brew install blackhole-2ch`, then reboot.
+2. In Audio MIDI Setup, click **+** → **Create Multi-Output Device**. Tick your speakers or headphones
+   and **BlackHole 2ch**, with the speakers first, and turn on drift correction for BlackHole.
+3. In System Settings → Sound → Output, choose the Multi-Output Device. The volume keys don't work with
+   it selected, so set volume in the playing app.
+4. In the scope, choose **BlackHole 2ch** as the input and press Start. Use MIX or XY to see both channels.
+
+If BlackHole is missing from the dropdown, reload the page (device names load after mic permission).
 
 ## Keyboard shortcuts
 

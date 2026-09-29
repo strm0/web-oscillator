@@ -63,9 +63,6 @@ function snapshotLenFor(indices) {
   return Math.min(Math.max(64, Math.ceil(maxWin * SNAP_MARGIN)), audio.RING);
 }
 
-// FPS tracking
-let fpsFrames = 0, fpsLast = performance.now(), fpsDisplay = 0;
-
 // Focus border shows for 2s after a focus change, then disappears (no fade).
 const FOCUS_BORDER_MS = 2000;
 let focusBorderUntil = 0;
@@ -97,7 +94,7 @@ function quadRects(W, H) {
 function resize() {
   const rect = displayCanvas.parentElement.getBoundingClientRect();
   const W = Math.round(rect.width);
-  const H = Math.round(rect.height - 22); // minus readout
+  const H = Math.round(rect.height);
 
   // Signal canvas at native resolution
   signalCanvas.width = W;
@@ -108,7 +105,7 @@ function resize() {
   displayCanvas.width = W;
   displayCanvas.height = H;
   displayCanvas.style.width = W + 'px';
-  displayCanvas.style.height = (H + 22) + 'px';
+  displayCanvas.style.height = H + 'px';
 
   sizeCrtBuffers();
 }
@@ -405,15 +402,7 @@ displayCanvas.addEventListener('mousedown', (e) => {
 function drawLoop() {
   if (!audio.running) return;
 
-  // FPS
-  fpsFrames++;
   const now = performance.now();
-  if (now - fpsLast > 500) {
-    fpsDisplay = Math.round(fpsFrames / ((now - fpsLast) / 1000));
-    fpsFrames = 0;
-    fpsLast = now;
-    controls.updateFps(fpsDisplay);
-  }
 
   // Single acquisition per frame — every pane renders from this one snapshot.
   // Frequency from the analysers; time-domain from the ring buffer.

@@ -214,8 +214,6 @@ export class Controls {
 
     // Display mode
     MODES.forEach(m => document.getElementById('btn-' + m)?.classList.toggle('active', m === c.mode));
-    const labels = { wave: 'WAVEFORM', fft: 'SPECTRUM', xy: 'XY MODE', both: 'WAVE+FFT', spectrogram: 'SPECTRO' };
-    document.getElementById('rdMode').textContent = labels[c.mode] || c.mode.toUpperCase();
 
     // XY source
     [['Auto', 'auto'], ['Stereo', 'stereo'], ['Self', 'self']].forEach(([l, v]) =>
@@ -277,8 +275,6 @@ export class Controls {
       const btn = document.getElementById('btn-' + m);
       if (btn) btn.classList.toggle('active', m === mode);
     });
-    const labels = { wave: 'WAVEFORM', fft: 'SPECTRUM', xy: 'XY MODE', both: 'WAVE+FFT', spectrogram: 'SPECTRO' };
-    document.getElementById('rdMode').textContent = labels[mode] || mode.toUpperCase();
   }
 
   _setXYSource(src) {
@@ -414,9 +410,6 @@ export class Controls {
     document.getElementById('btnStop').style.display = '';
     document.getElementById('statusText').textContent = '';
     document.getElementById('statusText').className = 'status';
-    document.getElementById('rdSampleRate').textContent = info.sampleRate;
-    document.getElementById('rdFftSize').textContent = info.fftSize;
-    document.getElementById('rdChannels').textContent = info.channels + 'ch';
   }
 
   showStopped() {
@@ -429,10 +422,6 @@ export class Controls {
   showError(msg) {
     document.getElementById('statusText').textContent = 'ERR: ' + msg;
     document.getElementById('statusText').className = 'status error';
-  }
-
-  updateFps(fps) {
-    document.getElementById('rdFps').textContent = fps;
   }
 
   updateFreeze(on) {
