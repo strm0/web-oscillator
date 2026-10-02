@@ -142,8 +142,20 @@ export class ScopeRenderer {
   }
 
   // ── SPECTRUM (FFT) ──
+  // Drawn on the left half, then reflected about the centre line so the two
+  // halves meet at the high-frequency end.
   drawSpectrum(freqData, x0, y0, w, h, gain, glowIntensity, logScale) {
     if (!freqData || freqData.length === 0) return;
+    const ctx = this.ctx;
+    this._drawSpectrumHalf(freqData, x0, y0, w / 2, h, gain, glowIntensity, logScale);
+    ctx.save();
+    ctx.translate(2 * x0 + w, 0);
+    ctx.scale(-1, 1);
+    this._drawSpectrumHalf(freqData, x0, y0, w / 2, h, gain, glowIntensity, logScale);
+    ctx.restore();
+  }
+
+  _drawSpectrumHalf(freqData, x0, y0, w, h, gain, glowIntensity, logScale) {
     const ctx = this.ctx;
     const c = this.colors;
 
@@ -403,7 +415,13 @@ export class ScopeRenderer {
     const ctx = this.ctx;
     const sm = ctx.imageSmoothingEnabled;
     ctx.imageSmoothingEnabled = true;
-    ctx.drawImage(this._spCanvas, 0, 0, bins, rows, x0, y0, w, h);
+    // Left half, then the same image reflected about the centre line.
+    ctx.drawImage(this._spCanvas, 0, 0, bins, rows, x0, y0, w / 2, h);
+    ctx.save();
+    ctx.translate(2 * x0 + w, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(this._spCanvas, 0, 0, bins, rows, x0, y0, w / 2, h);
+    ctx.restore();
     ctx.imageSmoothingEnabled = sm;
   }
 
