@@ -18,6 +18,7 @@ playing on the computer itself.
 - **Collapsible sidebar** — Slides away to give the scope more room
 - **Keyboard shortcuts** — Every major control has a hotkey
 - **Screenshot export** — Cmd+S saves the current display as PNG
+- **Presets** — save all settings under a name; stored as JSON files in `presets/`
 
 ## Getting started
 
@@ -25,13 +26,20 @@ The app uses ES modules, so it needs to be served over HTTP.
 
 ```bash
 cd oscilloscope
-python3 -m http.server 8000
+python3 server.py
 ```
 
 Open `http://localhost:8000` in Chrome. Select your audio input from the dropdown and press Start.
 
-After editing the JS, hard reload with Cmd+Shift+R. The simple server sends no cache headers, so a
-normal reload can mix old cached modules with the new HTML and break the page.
+`server.py` is a small static server that can also write preset files. The plain
+`python3 -m http.server 8000` still runs the scope, but presets are then saved in the browser only.
+
+## Presets
+
+**Save preset** (under Audio Source) stores the layout, all four pane settings, input gain and
+coupling under a name. Each preset is written to `presets/<name>.json`, so presets can be committed
+and shared; any preset file placed in that folder appears in the list after a reload. Click a preset
+to load it, or the `x` next to it to delete it (this removes the file, after a confirmation).
 
 ## Visualising audio playing on the computer (macOS)
 
@@ -48,21 +56,32 @@ needed, because the scope captures any audio input.
 
 If BlackHole is missing from the dropdown, reload the page (device names load after mic permission).
 
+DAWs like Ableton ignore the system output and pick their own device. In Ableton, go to Settings → Audio
+and set Output Device to the Multi-Output Device (or BlackHole 2ch alone). Make sure outputs 1/2 are
+enabled under Output Config and that the sample rate matches the Multi-Output Device in Audio MIDI Setup.
+
 ## Keyboard shortcuts
 
 | Key | Action |
 |-----|--------|
+| Up/Down | Move the menu cursor |
+| Left/Right | Change the highlighted value (Shift for bigger steps) |
+| Enter | Activate the highlighted item |
+| Esc | Close the menu |
 | 1-5 | Switch display mode |
+| 6 | Single/quad layout |
+| [ ] | Focus pane (quad) |
 | A | Toggle AC/DC coupling |
 | T | Cycle trigger mode |
 | R | Rearm single trigger |
 | C | Toggle cursors |
 | Space | Freeze/unfreeze |
-| ↑↓ | Adjust gain |
-| ←→ | Adjust sweep speed |
 | F | Toggle fullscreen |
-| P | Toggle sidebar |
+| P | Toggle menu |
 | Cmd+S | Screenshot |
+
+The menu is a terminal-style list: hover or use the arrow keys to move the highlight. Coupling,
+trigger and the freeze/cursor tools are under the collapsed ADVANCED section at the bottom.
 
 ## Project structure
 
@@ -78,6 +97,8 @@ oscilloscope/
     ├── renderer.js     — Grid, waveform, FFT, XY, spectrogram drawing
     ├── crt.js          — Phosphor persistence, bloom compositing
     ├── controls.js     — UI bindings, keyboard shortcuts
+    ├── tui.js          — Arrow-key / mouse navigation of the menu
+    ├── preset-panel.js — Preset list, save and delete dialogs
     └── presets.js      — Default state, save/load configs
 ```
 

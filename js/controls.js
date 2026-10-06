@@ -9,6 +9,8 @@
    need to mutate config here.
    ═══════════════════════════════════════════════════════════ */
 
+import { syncRange } from './tui.js';
+
 const MODES = ['wave', 'fft', 'xy', 'both', 'spectrogram'];
 
 export class Controls {
@@ -34,7 +36,7 @@ export class Controls {
   async _populateDevices() {
     const devices = await this.cb.getDevices();
     const sel = document.getElementById('audioSource');
-    sel.innerHTML = '<option value="">-- select device --</option>';
+    sel.innerHTML = '<option value="">default input</option>';
     devices.forEach(d => {
       const opt = document.createElement('option');
       opt.value = d.deviceId;
@@ -105,7 +107,15 @@ export class Controls {
     this._slider('persSlider', 'persVal', v => { this._cfg().persistence = parseFloat(v); });
     this._slider('glowSlider', 'glowVal', v => { this._cfg().glow = parseFloat(v); });
     this._slider('lwSlider', 'lwVal', v => { this._cfg().lineWeight = parseFloat(v); });
-    this._slider('beamSlider', 'beamVal', v => { this._cfg().beamIntensity = parseFloat(v); });
+    // Beam strength only applies while glow is off (beamIntensity > 0).
+    this._slider('beamSlider', 'beamVal', v => {
+      this._beamStrength = parseFloat(v);
+      if (this._cfg().beamIntensity > 0) this._cfg().beamIntensity = this._beamStrength;
+    });
+
+    // Glow ON = classic halo renderer (beam 0); OFF = velocity-modulated beam renderer.
+    document.getElementById('btnGlowOn')?.addEventListener('click', () => this._setGlow(true));
+    document.getElementById('btnGlowOff')?.addEventListener('click', () => this._setGlow(false));
 
     // Feedback (per focused pane)
     document.getElementById('btnFbOn')?.addEventListener('click', () => this._setFeedbackEnabled(true));
@@ -130,13 +140,9 @@ export class Controls {
     document.getElementById('btnFreeze').addEventListener('click', () => cb.toggleFreeze());
     document.getElementById('btnCursors').addEventListener('click', () => cb.toggleCursors());
 
-    // FFT log scale
-    const logBtn = document.getElementById('btnLogScale');
-    if (logBtn) logBtn.addEventListener('click', () => {
-      const v = !this._cfg().logScale;
-      this._cfg().logScale = v;
-      logBtn.classList.toggle('active', v);
-    });
+    // FFT frequency axis (only shown in FFT / W+F modes)
+    document.getElementById('btnLinScale')?.addEventListener('click', () => this._setLogScale(false));
+    document.getElementById('btnLogScale')?.addEventListener('click', () => this._setLogScale(true));
 
     // Rearm single trigger
     document.getElementById('btnRearm')?.addEventListener('click', () => cb.rearm());
@@ -168,6 +174,7 @@ export class Controls {
     document.getElementById('scopeContainer')?.classList.toggle('quad', layout === 'quad');
     // Focus selector is only meaningful in quad.
     const single = layout === 'single';
+    document.getElementById('focusRowItem')?.classList.toggle('hidden', single);
     for (let i = 0; i < 4; i++) {
       const b = document.getElementById('focus-' + i);
       if (b) b.disabled = single;
@@ -203,7 +210,7 @@ export class Controls {
   // ── Two-way binding: write a slider's value + label from config ──
   _setSlider(sliderId, valId, value, formatter) {
     const el = document.getElementById(sliderId);
-    if (el) el.value = value;
+    if (el) { el.value = value; syncRange(el); }
     const valEl = document.getElementById(valId);
     if (valEl) valEl.textContent = formatter ? formatter(el ? el.value : value) : (el ? el.value : value);
   }
@@ -237,7 +244,7 @@ export class Controls {
     this._setSlider('persSlider', 'persVal', c.persistence);
     this._setSlider('glowSlider', 'glowVal', c.glow);
     this._setSlider('lwSlider', 'lwVal', c.lineWeight);
-    this._setSlider('beamSlider', 'beamVal', c.beamIntensity);
+    this._refreshGlowUI();
 
     // Feedback section
     this._refreshFeedbackUI(c.feedbackEnabled);
@@ -248,9 +255,9 @@ export class Controls {
     this._setSlider('fbOffYSlider', 'fbOffYVal', c.fbOffsetY);
     this._setSlider('fbBlurSlider', 'fbBlurVal', c.fbBlur);
 
-    // Phosphor + log
+    // Phosphor + FFT axis
     document.getElementById('phosphorSelect').value = c.phosphor;
-    document.getElementById('btnLogScale')?.classList.toggle('active', c.logScale);
+    this._refreshFftAxisUI();
 
     // CRT on/off + overlay (follows focused pane)
     const on = c.crtEnabled;
@@ -275,6 +282,21 @@ export class Controls {
       const btn = document.getElementById('btn-' + m);
       if (btn) btn.classList.toggle('active', m === mode);
     });
+    this._refreshFftAxisUI();
+  }
+
+  _setLogScale(on) {
+    this._cfg().logScale = on;
+    this._refreshFftAxisUI();
+  }
+
+  // LIN / LOG buttons; the row only exists for modes that draw a spectrum.
+  _refreshFftAxisUI() {
+    const c = this._cfg();
+    const hasFft = c.mode === 'fft' || c.mode === 'both';
+    document.getElementById('fftAxisRow')?.classList.toggle('hidden', !hasFft);
+    document.getElementById('btnLinScale')?.classList.toggle('active', !c.logScale);
+    document.getElementById('btnLogScale')?.classList.toggle('active', !!c.logScale);
   }
 
   _setXYSource(src) {
@@ -282,6 +304,31 @@ export class Controls {
     [['Auto', 'auto'], ['Stereo', 'stereo'], ['Self', 'self']].forEach(([label, val]) => {
       document.getElementById('btnXy' + label)?.classList.toggle('active', val === src);
     });
+  }
+
+  // ── Glow / beam ──
+  _setGlow(on) {
+    const c = this._cfg();
+    if (on) {
+      if (c.beamIntensity > 0) this._beamStrength = c.beamIntensity;
+      c.beamIntensity = 0;
+    } else {
+      c.beamIntensity = this._beamStrength ?? 0.6;
+    }
+    this._refreshGlowUI();
+  }
+
+  _refreshGlowUI() {
+    const c = this._cfg();
+    const on = c.beamIntensity === 0;
+    if (!on) this._beamStrength = c.beamIntensity;
+    document.getElementById('btnGlowOn')?.classList.toggle('active', on);
+    document.getElementById('btnGlowOff')?.classList.toggle('active', !on);
+    const glow = document.getElementById('glowSlider');
+    const beam = document.getElementById('beamSlider');
+    if (glow) glow.disabled = !on;
+    if (beam) beam.disabled = on;
+    this._setSlider('beamSlider', 'beamVal', this._beamStrength ?? 0.6);
   }
 
   // ── Feedback ──
@@ -307,9 +354,16 @@ export class Controls {
 
   _setCoupling(mode) {
     this.state.coupling = mode;
+    this.cb.setCoupling(mode);
+    this.refreshGlobals();
+  }
+
+  // Read the global (audio graph) settings into their controls.
+  refreshGlobals() {
+    const mode = this.state.coupling;
     document.getElementById('btnAC').classList.toggle('active', mode === 'ac');
     document.getElementById('btnDC').classList.toggle('active', mode === 'dc');
-    this.cb.setCoupling(mode);
+    this._setSlider('inputGainSlider', 'inputGainVal', this.state.inputGain, v => v + 'x');
   }
 
   _setTrigMode(mode) {
@@ -327,11 +381,12 @@ export class Controls {
   }
 
   // ── PANEL TOGGLE ──
-  _togglePanel() {
+  _togglePanel(open) {
     const panel = document.getElementById('sidePanel');
-    panel.classList.toggle('collapsed');
+    panel.classList.toggle('collapsed', open === undefined ? undefined : !open);
     setTimeout(() => window.dispatchEvent(new Event('resize')), 260);
   }
+  closePanel() { this._togglePanel(false); }
 
   // ── FULLSCREEN ──
   _toggleFullscreen() {
@@ -354,6 +409,7 @@ export class Controls {
   _bindKeyboard() {
     document.addEventListener('keydown', (e) => {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+      if (document.querySelector('dialog[open]')) return;
 
       switch (e.key.toLowerCase()) {
         case ' ':
@@ -361,10 +417,10 @@ export class Controls {
           this.cb.toggleFreeze();
           break;
         case '1': this._setMode('wave'); break;
-        case '2': this._setMode('fft'); break;
-        case '3': this._setMode('xy'); break;
-        case '4': this._setMode('both'); break;
-        case '5': this._setMode('spectrogram'); break;
+        case '2': this._setMode('xy'); break;
+        case '3': this._setMode('fft'); break;
+        case '4': this._setMode('spectrogram'); break;
+        case '5': this._setMode('both'); break;
         case '6': this._setLayout(this.state.layout === 'quad' ? 'single' : 'quad'); break;
         case '[': this._cycleFocus(-1); break;
         case ']': this._cycleFocus(1); break;
@@ -381,10 +437,6 @@ export class Controls {
         case 's':
           if (e.ctrlKey || e.metaKey) { e.preventDefault(); this.cb.screenshot(); }
           break;
-        case 'arrowup':   e.preventDefault(); this._adjustSlider('gainSlider', 0.1); break;
-        case 'arrowdown': e.preventDefault(); this._adjustSlider('gainSlider', -0.1); break;
-        case 'arrowleft': e.preventDefault(); this._adjustSlider('sweepSlider', -0.25); break;
-        case 'arrowright':e.preventDefault(); this._adjustSlider('sweepSlider', 0.25); break;
       }
     });
 
@@ -396,18 +448,11 @@ export class Controls {
     });
   }
 
-  _adjustSlider(id, delta) {
-    const el = document.getElementById(id);
-    if (!el) return;
-    const newVal = Math.max(parseFloat(el.min), Math.min(parseFloat(el.max), parseFloat(el.value) + delta));
-    el.value = newVal;
-    el.dispatchEvent(new Event('input'));
-  }
-
   // ── UI state updates ──
   showRunning(info) {
     document.getElementById('btnStart').style.display = 'none';
     document.getElementById('btnStop').style.display = '';
+    document.getElementById('startHint').classList.add('off');
     document.getElementById('statusText').textContent = '';
     document.getElementById('statusText').className = 'status';
   }
@@ -415,6 +460,7 @@ export class Controls {
   showStopped() {
     document.getElementById('btnStart').style.display = '';
     document.getElementById('btnStop').style.display = 'none';
+    document.getElementById('startHint').classList.remove('off');
     document.getElementById('statusText').textContent = '';
     document.getElementById('statusText').className = 'status';
   }

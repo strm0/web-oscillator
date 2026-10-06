@@ -439,7 +439,7 @@ export class ScopeRenderer {
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.fillStyle = '#885500';
-    ctx.font = '10px "Share Tech Mono", monospace';
+    ctx.font = '10px Monaco, Menlo, Consolas, "DejaVu Sans Mono", monospace';
     ctx.fillText('T', x0 - 11, trigY + 4);
     ctx.restore();
   }

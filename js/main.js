@@ -7,7 +7,9 @@ import { ScopeAnalyser } from './analyser.js';
 import { ScopeRenderer } from './renderer.js';
 import { CRTProcessor }  from './crt.js';
 import { Controls }       from './controls.js';
-import { getDefaultState } from './presets.js';
+import { getDefaultState, toPreset } from './presets.js';
+import { PresetPanel }   from './preset-panel.js';
+import { Tui }           from './tui.js';
 
 // ── STATE ──
 const state = getDefaultState();
@@ -259,6 +261,33 @@ function drawPane(pane, paneRect, inset, frame) {
   }
 }
 
+// ── LAYOUT ──
+function setLayout(layout) {
+  state.layout = layout;
+  if (layout === 'single') state.focusedPane = 0;
+  sizeCrtBuffers();
+  controls.updateLayout(layout);
+  if (layout === 'quad') flashFocusBorder();
+}
+
+// ── PRESETS ──
+// Pane configs are written in place: each pane holds a reference to its
+// config object, and the per-frame sync carries the values to the engines.
+function applyPreset(preset) {
+  preset.panes.forEach((cfg, i) => {
+    const pane = panes[i];
+    if (pane.config.mode === 'spectrogram' && cfg.mode !== 'spectrogram') pane.spectroHistory.length = 0;
+    Object.assign(pane.config, cfg);
+    if (cfg.trigMode === 'single') pane.analyser.rearm();
+  });
+  state.inputGain = preset.inputGain;
+  state.coupling = preset.coupling;
+  audio.setInputGain(preset.inputGain);
+  audio.setCoupling(preset.coupling);
+  controls.refreshGlobals();
+  setLayout(preset.layout);   // also re-reads the focused pane into the controls
+}
+
 // ── CALLBACKS FOR CONTROLS ──
 const controls = new Controls(state, {
   getDevices: () => audio.enumerateDevices(),
@@ -267,6 +296,7 @@ const controls = new Controls(state, {
     const deviceId = document.getElementById('audioSource').value;
     try {
       const info = await audio.start(deviceId);
+      audio.setInputGain(state.inputGain);   // the graph is rebuilt at unity gain
       controls.showRunning(info);
       requestAnimationFrame(drawLoop);
     } catch (e) {
@@ -289,13 +319,7 @@ const controls = new Controls(state, {
   setTrigMode: (mode) => { if (mode === 'single') focusedPane().analyser.rearm(); },
   rearm:       ()     => focusedPane().analyser.rearm(),
 
-  setLayout: (layout) => {
-    state.layout = layout;
-    if (layout === 'single') state.focusedPane = 0;
-    sizeCrtBuffers();
-    controls.updateLayout(layout);
-    if (layout === 'quad') flashFocusBorder();
-  },
+  setLayout,
 
   onFocusChange: () => flashFocusBorder(),
 
@@ -344,6 +368,13 @@ const controls = new Controls(state, {
     link.href = displayCanvas.toDataURL('image/png');
     link.click();
   },
+});
+
+new Tui(document.getElementById('sidePanel'), { onEscape: () => controls.closePanel() });
+
+new PresetPanel({
+  getPreset: (name) => toPreset(name, state),
+  applyPreset,
 });
 
 // ── CURSOR DRAGGING (single layout only) ──
