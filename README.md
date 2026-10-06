@@ -6,7 +6,13 @@ figure, spectrum, or spectrogram.
 
 ## Setup
 
-You need Chrome and Python 3. Nothing is installed; the app is plain HTML and JavaScript.
+Open https://web-oscillator.vercel.app in Chrome and allow microphone access when asked. Nothing
+needs to be installed.
+
+### Running locally and saving preset files
+
+The website keeps presets in the browser only. To save them as files you can commit, run the app
+from the repo with its small Python server:
 
 ```bash
 git clone https://github.com/strm0/web-oscillator.git
@@ -14,10 +20,7 @@ cd web-oscillator
 python3 server.py        # Windows: python server.py
 ```
 
-Open http://localhost:8000 in Chrome and allow microphone access when asked.
-
-`server.py` serves the files and also saves presets as JSON files in `presets/`. Any other static
-server works too, but presets are then kept in the browser only.
+Then open http://localhost:8000. Presets are written to `presets/` as JSON files.
 
 ## Use
 

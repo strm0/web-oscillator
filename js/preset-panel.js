@@ -4,8 +4,6 @@
 
 import { listPresets, savePreset, loadPreset, deletePreset, presetId } from './presets.js';
 
-const NEEDS_SERVER = 'Start the app with python3 server.py to write files.';
-
 // Show a modal <dialog>; resolves true only if it was closed by its OK button.
 function openDialog(dlg) {
   return new Promise(resolve => {
@@ -96,7 +94,7 @@ export class PresetPanel {
     if (existing && !await this._confirm(`A preset named "${existing.name}" already exists. Overwrite it?`, 'OVERWRITE')) return;
 
     const written = await savePreset(id, this.getPreset(name));
-    if (!written) this._say('Saved in this browser only. ' + NEEDS_SERVER);
+    if (!written) this._say('Saved in this browser only.');
     await this.refresh();
   }
 
@@ -115,7 +113,7 @@ export class PresetPanel {
     const where = p.local ? 'It is stored in this browser only.' : `This removes presets/${p.id}.json.`;
     if (!await this._confirm(`Delete preset "${p.name}"? ${where}`, 'DELETE')) return;
 
-    if (!await deletePreset(p)) this._say('Could not delete the file. ' + NEEDS_SERVER);
+    if (!await deletePreset(p)) this._say('Could not delete the preset file.');
     await this.refresh();
   }
 }
