@@ -80,40 +80,25 @@ Every output has a monitor source. Chrome does not list it, but you can redirect
 
 The change sticks for Chrome until you pick something else.
 
-## Keyboard shortcuts
-
-| Key | Action |
-|-----|--------|
-| Up/Down, Left/Right, Enter | Navigate the menu |
-| Esc | Close the menu |
-| P | Show or hide the menu |
-| F | Fullscreen |
-| 1-5 | WAVE, XY, FFT, SPEC, W+F |
-| 6 | Single or quad view |
-| [ ] | Focus a pane in quad view |
-| Space | Freeze |
-| C | Measurement cursors |
-| A | AC/DC coupling |
-| T | Cycle trigger mode |
-| R | Rearm single trigger |
-| Cmd+S / Ctrl+S | Screenshot |
-
 ## Project structure
 
 ```
-index.html            HTML shell and menu
-server.py             Static server that also writes preset files
-presets/              Saved presets (JSON), listed by index.json
-css/scope.css         Styling and CRT overlays
-js/main.js            Init, draw loop, glue
-js/audio.js           Devices, Web Audio graph, stereo capture
-js/analyser.js        Trigger, freeze, cursor measurements
-js/renderer.js        Grid, waveform, FFT, XY, spectrogram drawing
-js/crt.js             Phosphor persistence and bloom
-js/controls.js        Menu bindings and keyboard shortcuts
-js/tui.js             Arrow-key navigation of the menu
-js/preset-panel.js    Preset list and dialogs
-js/presets.js         Default settings, preset files
+web-oscillator/
+├── index.html          — HTML shell and menu
+├── server.py           — Static server that also writes preset files
+├── presets/            — Saved presets (JSON), listed by index.json
+├── css/
+│   └── scope.css       — Styling and CRT overlay rules
+└── js/
+    ├── main.js         — Init, draw loop, glue
+    ├── audio.js        — Device enumeration, Web Audio graph, stereo capture
+    ├── analyser.js     — Trigger logic, freeze, cursor measurements
+    ├── renderer.js     — Grid, waveform, FFT, XY, spectrogram drawing
+    ├── crt.js          — Phosphor persistence, bloom compositing
+    ├── controls.js     — Menu bindings, keyboard shortcuts
+    ├── tui.js          — Arrow-key navigation of the menu
+    ├── preset-panel.js — Preset list, save and delete dialogs
+    └── presets.js      — Default state, preset files
 ```
 
 ## Notes
